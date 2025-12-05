@@ -1,0 +1,147 @@
+@page "/stats"
+@using NewStats.Web.Models
+@using NewStats.Web.Services
+@inject SessionMetricsService MetricsService
+@inject RedisCacheService CacheService
+
+<PageTitle>Stats Dashboard - NewStats</PageTitle>
+
+<div class="container mx-auto px-4 py-8">
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold text-gray-800 mb-2">📊 Session Statistics</h1>
+        <p class="text-gray-600">Track your article interactions this session</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-md p-6 text-center">
+            <div class="text-5xl mb-3">👆</div>
+            <div class="text-4xl font-bold text-blue-600 mb-2">@totalClicks</div>
+            <div class="text-gray-600">Total Clicks</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-md p-6 text-center">
+            <div class="text-5xl mb-3">📰</div>
+            <div class="text-4xl font-bold text-green-600 mb-2">@uniqueArticles</div>
+            <div class="text-gray-600">Unique Articles</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-md p-6 text-center">
+            <div class="text-5xl mb-3">📈</div>
+            <div class="text-4xl font-bold text-purple-600 mb-2">@(uniqueArticles > 0 ? (totalClicks / (double)uniqueArticles).ToString("F1") : "0")</div>
+            <div class="text-gray-600">Avg Clicks/Article</div>
+        </div>
+    </div>
+
+    @if (topArticles.Any())
+    {
+        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">🔥 Most Clicked Articles</h2>
+            <div class="space-y-4">
+                @foreach (var (articleId, clicks, index) in topArticles.Select((x, i) => (x.Key, x.Value, i)))
+                {
+                    <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                        <div class="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <span class="font-bold text-blue-600">@(index + 1)</span>
+                        </div>
+                        <div class="flex-1">
+                            @{
+                                var articleInfo = articlesInfo.GetValueOrDefault(articleId);
+                            }
+                            @if (articleInfo != null)
+                            {
+                                <h3 class="font-semibold text-gray-800 line-clamp-1">@articleInfo.Title</h3>
+                                <p class="text-sm text-gray-500">@articleInfo.Source</p>
+                            }
+                            else
+                            {
+                                <h3 class="font-semibold text-gray-800">Article ID: @articleId</h3>
+                            }
+                        </div>
+                        <div class="flex-shrink-0 text-right">
+                            <div class="text-2xl font-bold text-blue-600">@clicks</div>
+                            <div class="text-xs text-gray-500">clicks</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">📋 All Clicked Articles</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="border-b border-gray-200">
+                            <th class="text-left py-3 px-4 text-gray-600 font-semibold">Article</th>
+                            <th class="text-left py-3 px-4 text-gray-600 font-semibold">Source</th>
+                            <th class="text-center py-3 px-4 text-gray-600 font-semibold">Clicks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var kvp in allClicks.OrderByDescending(x => x.Value))
+                        {
+                            var articleInfo = articlesInfo.GetValueOrDefault(kvp.Key);
+                            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                <td class="py-3 px-4">
+                                    @if (articleInfo != null)
+                                    {
+                                        <a href="/article/@kvp.Key" class="text-blue-600 hover:underline">
+                                            @articleInfo.Title
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-gray-600">@kvp.Key</span>
+                                    }
+                                </td>
+                                <td class="py-3 px-4 text-gray-500">
+                                    @(articleInfo?.Source ?? "Unknown")
+                                </td>
+                                <td class="py-3 px-4 text-center">
+                                    <span class="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full font-bold">
+                                        @kvp.Value
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-12 bg-white rounded-xl shadow-md">
+            <div class="text-6xl mb-4">📭</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">No clicks yet</h2>
+            <p class="text-gray-600 mb-4">Start browsing articles to see your statistics here</p>
+            <a href="/" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Search Articles
+            </a>
+        </div>
+    }
+</div>
+
+@code {
+    private int totalClicks = 0;
+    private int uniqueArticles = 0;
+    private Dictionary<string, int> allClicks = new();
+    private IEnumerable<KeyValuePair<string, int>> topArticles = [];
+    private Dictionary<string, Article> articlesInfo = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        totalClicks = MetricsService.GetTotalClicks();
+        uniqueArticles = MetricsService.GetUniqueArticlesClicked();
+        allClicks = MetricsService.GetAllClickCounts();
+        topArticles = MetricsService.GetTopClickedArticles(5);
+
+        // Load article info from cache
+        foreach (var articleId in allClicks.Keys)
+        {
+            var article = await CacheService.GetArticleAsync(articleId);
+            if (article != null)
+            {
+                articlesInfo[articleId] = article;
+            }
+        }
+    }
+}
