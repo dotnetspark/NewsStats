@@ -1,0 +1,167 @@
+@page "/"
+@using NewsStats.Wasm.Models
+@using NewsStats.Wasm.Services
+@inject NewsApiClient NewsApiClient
+@inject ArticleClickedEvent ArticleClickedEvent
+@inject SearchStateService SearchState
+@inject NavigationManager NavigationManager
+
+<div class="container mx-auto px-4">
+    <h1 class="text-3xl font-bold mb-6 text-gray-900">News Search</h1>
+
+    <div class="mb-6">
+        <div class="mb-4">
+            <label class="block text-sm font-medium mb-2 text-gray-900">Keywords</label>
+            <input type="text" @bind="query" @bind:event="oninput" @onkeydown="HandleKeyDown"
+                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                placeholder="Enter keywords..." />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+                <label class="block text-sm font-medium mb-2 text-gray-900">From Date</label>
+                <input type="date" @bind="fromDate"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2 text-gray-900">To Date</label>
+                <input type="date" @bind="toDate"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900" />
+            </div>
+        </div>
+
+        <button @onclick="SearchArticles" disabled="@isLoading"
+            class="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed">
+            @if (isLoading)
+            {
+                <span>Searching...</span>
+            }
+            else
+            {
+                <span>Search</span>
+            }
+        </button>
+    </div>
+
+    @if (error != null)
+    {
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            @error
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            @for (int i = 0; i < 6; i++)
+            {
+                <div class="border border-gray-200 rounded-lg p-4 bg-white animate-pulse">
+                    <div class="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
+                    <div class="h-3 bg-gray-200 rounded w-full mb-2"></div>
+                    <div class="h-3 bg-gray-200 rounded w-full mb-2"></div>
+                    <div class="h-3 bg-gray-200 rounded w-2/3"></div>
+                </div>
+            }
+        </div>
+    }
+    else if (articles.Count > 0)
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            @foreach (var article in articles)
+            {
+                <div class="border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer bg-white"
+                    @onclick="() => ViewArticle(article)">
+                    @if (!string.IsNullOrEmpty(article.UrlToImage))
+                    {
+                        <img src="@article.UrlToImage" alt="@article.Title" class="w-full h-48 object-cover" />
+                    }
+                    else
+                    {
+                        <div class="w-full h-48 bg-gray-200 flex items-center justify-center">
+                            <span class="text-gray-400">No image</span>
+                        </div>
+                    }
+                    <div class="p-4">
+                        <h3 class="font-semibold text-lg mb-2 text-gray-900">@article.Title</h3>
+                        <p class="text-sm text-gray-600 mb-2">@article.Description</p>
+                        <div class="text-xs text-gray-500">
+                            <span>@article.Source.Name</span>
+                            @if (article.PublishedAt.HasValue)
+                            {
+                                <span> • @article.PublishedAt.Value.ToString("MMM dd, yyyy")</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (hasSearched)
+    {
+        <div class="text-center text-gray-500 py-8">
+            No articles found. Try different keywords or dates.
+        </div>
+    }
+</div>
+
+@code {
+    private string query = "";
+    private DateTime? fromDate;
+    private DateTime? toDate;
+    private List<Article> articles = new();
+    private bool isLoading = false;
+    private string? error = null;
+    private bool hasSearched = false;
+
+    protected override void OnInitialized()
+    {
+        // Restore state from service
+        query = SearchState.Query;
+        fromDate = SearchState.FromDate;
+        toDate = SearchState.ToDate;
+        articles = SearchState.Articles;
+        hasSearched = SearchState.HasSearched;
+    }
+
+    private async Task SearchArticles()
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return;
+
+        isLoading = true;
+        error = null;
+        hasSearched = true;
+
+        try
+        {
+            var response = await NewsApiClient.SearchArticlesAsync(query, fromDate, toDate);
+            articles = response?.Articles ?? new List<Article>();
+
+            // Save state to service
+            SearchState.SaveSearchState(query, fromDate, toDate, articles);
+        }
+        catch (Exception ex)
+        {
+            error = $"Error searching articles: {ex.Message}";
+            articles = new List<Article>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !isLoading)
+        {
+            await SearchArticles();
+        }
+    }
+
+    private void ViewArticle(Article article)
+    {
+        ArticleClickedEvent.NotifyArticleClicked(article);
+        NavigationManager.NavigateTo($"/article/{Uri.EscapeDataString(article.Url ?? "")}");
+    }
+}

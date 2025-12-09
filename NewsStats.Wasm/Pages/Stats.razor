@@ -1,0 +1,63 @@
+@page "/stats"
+@using NewsStats.Wasm.Services
+@inject ArticlesClickState ArticlesClickState
+@implements IDisposable
+
+<div class="container mx-auto px-4">
+    <h1 class="text-3xl font-bold mb-6 text-gray-900">Session Statistics</h1>
+
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="text-center">
+                <h2 class="text-xl font-semibold mb-4 text-gray-900">Articles Viewed</h2>
+                @if (clickedArticles.Any())
+                {
+                    <div class="mt-4 text-left">
+                        @foreach (var article in clickedArticles)
+                        {
+                            <div class="mb-3 pb-3 border-b border-gray-200 last:border-b-0 flex justify-between items-center">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-sm text-gray-900">@article.Title</h3>
+                                    <p class="text-xs text-gray-500">@article.Source.Name</p>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <span class="text-lg font-bold text-blue-600">@article.ClickCount</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="text-center">
+                <h2 class="text-xl font-semibold mb-4 text-gray-900">Total Clicks</h2>
+                <div class="text-8xl font-bold text-green-600">
+                    @totalClicks
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<NewsStats.Wasm.Models.Article> clickedArticles = new();
+    private int totalClicks = 0;
+
+    protected override void OnInitialized()
+    {
+        ArticlesClickState.OnStateChanged += UpdateMetrics;
+        UpdateMetrics();
+    }
+
+    private void UpdateMetrics()
+    {
+        clickedArticles = ArticlesClickState.GetClickedArticles();
+        totalClicks = ArticlesClickState.GetTotalClicks();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        ArticlesClickState.OnStateChanged -= UpdateMetrics;
+    }
+}

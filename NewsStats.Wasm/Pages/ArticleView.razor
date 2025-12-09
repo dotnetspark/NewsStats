@@ -1,0 +1,83 @@
+@page "/article/{encodedUrl}"
+@using NewsStats.Wasm.Models
+@using NewsStats.Wasm.Services
+@inject ArticlesClickState ArticlesClickState
+@inject SearchStateService SearchStateService
+@inject NavigationManager NavigationManager
+
+<div class="container mx-auto px-4">
+    @if (article != null)
+    {
+        <div class="mb-4">
+            <button @onclick="GoBack" class="text-blue-500 hover:text-blue-600">
+                ← Back to Search
+            </button>
+        </div>
+
+        <article class="bg-white rounded-lg shadow-lg p-6">
+            <h1 class="text-3xl font-bold mb-4 text-gray-900">@article.Title</h1>
+
+            <div class="flex items-center text-sm text-gray-500 mb-4">
+                <span>@article.Source.Name</span>
+                @if (article.PublishedAt.HasValue)
+                {
+                    <span class="mx-2">•</span>
+                    <span>@article.PublishedAt.Value.ToString("MMMM dd, yyyy")</span>
+                }
+                @if (!string.IsNullOrEmpty(article.Author))
+                {
+                    <span class="mx-2">•</span>
+                    <span>By @article.Author</span>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(article.UrlToImage))
+            {
+                <img src="@article.UrlToImage" alt="@article.Title" class="w-full h-64 object-cover rounded-lg mb-4" />
+            }
+
+            <p class="text-lg mb-4 text-gray-900">@article.Description</p>
+
+            @if (!string.IsNullOrEmpty(article.Content))
+            {
+                <div class="prose max-w-none text-gray-900">
+                    @article.Content
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(article.Url))
+            {
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <a href="@article.Url" target="_blank" class="text-blue-500 hover:text-blue-600">
+                        Read full article →
+                    </a>
+                </div>
+            }
+        </article>
+    }
+    else
+    {
+        <div class="text-center text-gray-500 py-8">
+            Article not found.
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string EncodedUrl { get; set; } = "";
+
+    private NewsStats.Wasm.Models.Article? article;
+
+    protected override void OnInitialized()
+    {
+        var url = Uri.UnescapeDataString(EncodedUrl);
+        article = SearchStateService.Articles
+        .FirstOrDefault(a => a.Url == url);
+    }
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+}
