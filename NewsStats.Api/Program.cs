@@ -1,33 +1,22 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Distributed;
-using NewsStats.Api.Hubs;
-using NewsStats.Api.Models;
+using NewsStats.Api.Services;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-// Add OpenAPI
 builder.Services.AddOpenApi();
 
-// Add SignalR
-builder.Services.AddSignalR();
-
-// Add distributed caching with Redis
 builder.AddRedisDistributedCache("cache");
 
-// Add response caching and compression
 builder.Services.AddResponseCaching();
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
 });
 
-// Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -48,12 +37,13 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add services
 builder.Services.AddHttpClient("NewsApi", (serviceProvider, client) =>
 {
     client.BaseAddress = new Uri("https://newsapi.org/v2/");
     client.DefaultRequestHeaders.Add("User-Agent", "NewStatsApp");
 });
+
+builder.Services.AddScoped<NewsApiService>();
 
 var app = builder.Build();
 
@@ -70,67 +60,25 @@ app.UseResponseCaching();
 
 app.MapDefaultEndpoints();
 
-app.MapHub<MetricsHub>("/metricshub");
-
 app.MapGet("/articles/search", async (
     string? query,
     DateTime? from,
     DateTime? to,
-    IHttpClientFactory httpClientFactory,
-    IConfiguration configuration,
-    IDistributedCache cache) =>
+    NewsApiService newsApiService) =>
 {
-    var client = httpClientFactory.CreateClient("NewsApi");
     // Validate query if provided - only alphanumeric and spaces
     if (!string.IsNullOrWhiteSpace(query) && !Regex.IsMatch(query, @"^[a-zA-Z0-9\s]+$"))
     {
         return Results.BadRequest(new { error = "Query must contain only alphanumeric characters and spaces." });
     }
 
-    // Generate cache key by hashing all parameters
-    var cacheKeyInput = $"{query ?? ""}|{from:yyyy-MM-dd}|{to:yyyy-MM-dd}";
-    var cacheKey = $"articles:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cacheKeyInput)))}";
-
-    // Try to get from cache
-    var cachedData = await cache.GetStringAsync(cacheKey);
-    if (!string.IsNullOrEmpty(cachedData))
-    {
-        var cachedResponse = JsonSerializer.Deserialize<NewsApiResponse>(cachedData);
-        return Results.Ok(cachedResponse);
-    }
-
-    // Build NewsAPI URL
-    var apiKey = configuration["NewsApiKey"]
-        ?? throw new InvalidOperationException("NewsApiKey not configured.");
-
     var searchQuery = string.IsNullOrWhiteSpace(query) ? "*" : query;
-    var url = $"everything?q={Uri.EscapeDataString(searchQuery)}&apiKey={apiKey}";
-
-    if (from.HasValue) url += $"&from={from.Value:yyyy-MM-dd}";
-    if (to.HasValue) url += $"&to={to.Value:yyyy-MM-dd}";
-
-    try
+    var result = await newsApiService.GetArticlesAsync(searchQuery, from, to);
+    if (result != null)
     {
-        var newsApiResponse = await client.GetFromJsonAsync<NewsApiResponse>(url);
-
-        if (newsApiResponse != null)
-        {
-            // Cache the response for 5 minutes
-            var cacheOptions = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
-            };
-            await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(newsApiResponse), cacheOptions);
-
-            return Results.Ok(newsApiResponse);
-        }
-
-        return Results.Problem("Failed to fetch articles.");
+        return Results.Ok(result);
     }
-    catch (HttpRequestException ex)
-    {
-        return Results.Problem($"Error fetching articles: {ex.Message}");
-    }
+    return Results.Problem("Failed to fetch articles.");
 })
 .WithName("SearchArticles")
 .WithTags("Articles");

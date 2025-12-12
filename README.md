@@ -141,16 +141,8 @@ The application uses a clean event-driven architecture for metrics tracking:
 ### Setup
 
 1. Clone the repository
-2. Set up user secrets for NewsAPI key:
-   ```bash
-   cd NewStats.AppHost
-   dotnet user-secrets set "NewsApiKey" "your-api-key-here"
-   ```
+2. Aspire dashboard is going to prompt for the NewsAPIKey, you'll need to get it from NewsAPI.org. The key will be stored in user secrets.
 3. Run with Aspire:
-   ```bash
-   aspire run
-   ```
-   Or:
    ```bash
    dotnet run --project NewStats.AppHost
    ```
